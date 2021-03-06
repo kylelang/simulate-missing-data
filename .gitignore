@@ -40,3 +40,6 @@ vignettes/*.pdf
 
 # Emacs autosave files
 *~
+
+# Output directory
+output/

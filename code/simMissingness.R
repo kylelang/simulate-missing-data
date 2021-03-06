@@ -21,7 +21,7 @@
 ###--------------------------------------------------------------------------###
 
 ## Objective function for the slopes:
-.fSlopes <- function(slope, target, weights, data, type)
+.fSlopes <- function(slope, target, weights, data, type, ...)
 {
     eta <- as.numeric(data %*% matrix(slope * weights))
 
@@ -30,7 +30,7 @@
     p <- plogis(eta)
     r <- rbinom(length(p), 1, p)
     
-    (auc(roc(r, p, smooth = TRUE, quiet = TRUE)) - target)^2
+    (auc(roc(r, p, quiet = TRUE, ...)) - target)^2
 }
 
 ###--------------------------------------------------------------------------###
@@ -40,9 +40,9 @@
 .optIntercept <- function(pm,
                           eta,
                           type,
-                          mixProb = 0.5,
                           tol     = c(0.1, 0.001),
-                          maxIter = 10)
+                          maxIter = 10,
+                          ...)
 {
     for(k in 1 : maxIter) {
         ## Define the search range:
@@ -79,7 +79,8 @@
                        data,
                        type,
                        tol     = c(0.1, 0.001),
-                       maxIter = 10)
+                       maxIter = 10,
+                       ...)
 {
     for(k in 1 : maxIter) {
         ## Define the search range:
@@ -91,7 +92,8 @@
                         target   = auc,
                         weights  = weights,
                         data     = data,
-                        type     = type)
+                        type     = type,
+                        ...)
         
         ## Are we far enough from the boundary?
         dist   <- out$minimum - int
@@ -112,28 +114,35 @@
 
 ## Simulate a nonresponse vector:
 simMissingness <- function(pm,
-                           auc,
                            data,
-                           preds = colnames(data),
-                           type  = "high",
-                           beta  = rep(1.0, length(preds))
-                           )
+                           auc       = NULL,
+                           preds     = colnames(data),
+                           type      = "high",
+                           beta      = rep(1.0, length(preds)),
+                           stdEta    = FALSE,
+                           stdData   = !stdEta,
+                           ...)
 {
     ## Standardize the missing data predictors:
-    data <- scale(data)
+    if(stdData) data <- scale(data)
 
     ## Find optimal slope values:
-    optOut1 <- .optSlopes(auc = auc, weights = beta, data = data, type = type)
-    
-    ## Find an optimal intercept value:
-    optOut2 <- .optIntercept(pm   = pm,
-                             eta  = data %*% matrix(optOut1$minimum * beta),
-                             type = type)
+    if(!is.null(auc)) {
+        optOut1 <-
+            .optSlopes(auc = auc, weights = beta, data = data, type = type, ...)
+        beta    <- optOut1$minimum * beta
+    }
 
-    ## Define the optimized linear predictor:
+    ## Define the (centered) linear predictor:
+    eta <- as.matrix(data) %*% matrix(beta)
+    if(stdEta) eta <- scale(eta)
+        
+    ## Find an optimal intercept value:
+    optOut2 <- .optIntercept(pm = pm, eta = eta, type = type, ...)
+
+    ## Define the optimized intercept:
     intercept <- optOut2$minimum
-    eta       <- data %*% matrix(optOut1$minimum * beta)
-    
+                                           
     ## Compute the probabilities of nonresponse:
     probs <- plogis(
         switch(type,
@@ -144,12 +153,11 @@ simMissingness <- function(pm,
                )
     )
     
-    ## Return a logical nonresponse vector:
     list(r   = as.logical(rbinom(n = length(eta), size = 1, prob = probs)),
          p   = probs,
          eta = eta,
          b0  = intercept,
-         b1  = matrix(optOut1$minimum * beta),
-         auc = sqrt(optOut1$objective) + auc
+         b1  = beta,
+         auc = ifelse(is.null(auc), NA, sqrt(optOut1$objective) + auc)
          )
 }

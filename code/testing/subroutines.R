@@ -1,7 +1,7 @@
 ### Title:    Subroutines for Simulation to Evaluate Missingness Generation
 ### Author:   Kyle M. Lang
 ### Created:  2021-03-04
-### Modified: 2021-03-04
+### Modified: 2021-03-05
 
 simData <- function(n, p, dist)
 {
@@ -21,7 +21,8 @@ simData <- function(n, p, dist)
 
 ###--------------------------------------------------------------------------###
 
-runCell <- function(parms, data)
+## Run experiment within one design cell with optimized slopes:
+runCell1 <- function(parms, data, ...)
 {
     ## Generate some regression weights:
     beta <- runif(parms$p, -1, 1)
@@ -33,7 +34,8 @@ runCell <- function(parms, data)
                             auc  = auc,
                             data = data,
                             type = type,
-                            beta = beta)
+                            beta = beta,
+                            ...)
              ),
         silent = TRUE
     )
@@ -47,7 +49,54 @@ runCell <- function(parms, data)
 
 ###--------------------------------------------------------------------------###
 
-doRep <- function(rp, conds)
+## Run experiment within one design cell with fixed slopes:
+runCell2 <- function(parms, data, ...)
+{
+    ## Generate some regression weights:
+    beta <- runif(parms$p, -1, 1)
+    
+    ## Simulate the missingness:
+    tmp <- try(
+        with(parms,
+             simMissingness(pm     = pm,
+                            auc    = NULL,
+                            data   = data,
+                            type   = type,
+                            beta   = beta,
+                            stdEta = TRUE,
+                            ...)
+             ),
+        silent = TRUE
+    )
+
+    if(class(tmp) != "try-error") {
+        if(parms$type %in% c("center", "tails"))
+            eta <- abs(tmp$eta)
+        else
+            eta <- tmp$eta
+
+        ## Compute the AUC:
+        fit <- glm(tmp$r ~ eta, family = binomial)
+        roc <- try(
+            roc(tmp$r, predict(fit), smooth = TRUE, quiet = TRUE),
+            silent = TRUE
+        )
+        
+        if(class(roc) != "try-error")
+            auc <- auc(roc)
+        else
+            auc <- NA
+        
+        ## Return key summaries:
+        list(pm = mean(tmp$r), auc = auc, e = NA)
+    }
+    else
+        list(pm = NA, auc = NA, e = tmp)
+}
+
+###--------------------------------------------------------------------------###
+
+doRep <- function(rp, conds, fixedSlopes, ...)
 {
     newData <- TRUE
     out <- err <- list()
@@ -63,9 +112,12 @@ doRep <- function(rp, conds)
             dat0 <- simData(n = n, p = p, dist = conds[i, "dist"])
         
         dat1 <- dat0[1 : n, 1 : p]
+
+        ## Choose the appropriate computational kernel:
+        runCell <- ifelse(fixedSlopes, runCell2, runCell1)
         
         ## Generate the appropriate missingness: 
-        tmp      <- runCell(as.list(conds[i, ]), data = dat1)
+        tmp      <- runCell(as.list(conds[i, ]), data = dat1, ...)
         out[[i]] <- with(tmp, c(pm, auc))
         err[[i]] <- tmp$e
     }
@@ -75,6 +127,6 @@ doRep <- function(rp, conds)
     
     err <- do.call(c, err)
     
-    list(conds = conds, out = out, err = err)
+    list(out = out, err = err)
 }
 
