@@ -12,30 +12,34 @@ source("simMissingness.R")
 
 n    <- 1000
 p    <- 5
-pm   <- 0.5
+pm   <- 0.25
 auc  <- 0.75
+snr  <- 0.5
 beta <- rep(10, p) #runif(p, -1, 1)
-type <- "high"
+type <- "tails"
+opt  <- "slopes"
 
-                                        #X <- as.data.frame(rmvnorm(n, rep(0, p), diag(p)))
-X <- as.data.frame(matrix(runif(n * p), ncol = p))
+X <- as.data.frame(rmvnorm(n, rep(0, p), diag(p)))
+                                        #X <- as.data.frame(matrix(runif(n * p), ncol = p))
 
-tmp <- simMissingness(pm     = pm,
-                      auc    = auc,
-                      data   = X,
-                      type   = type,
-                      beta   = beta,
-                      stdEta = FALSE,
-                      smooth = FALSE)
+tmp <- simMissingness(pm       = pm,
+                      auc      = auc,
+                      snr      = snr,
+                      data     = X,
+                      type     = type,
+                      beta     = beta,
+                      stdEta   = TRUE,
+                      optimize = opt,
+                      smooth   = FALSE)
 
 r <- tmp$r
 mean(r)
 
-tmp$auc
+tmp$fit
 
-plot(x = tmp$eta, y = tmp$p)
+plot(x = abs(tmp$eta), y = tmp$p)
 
-fit <- glm(r ~ tmp$eta, family = binomial)
+fit <- glm(r ~ abs(tmp$eta), family = binomial)
 
 rocOut <- roc(r, predict(fit), smooth = TRUE)
 plot(rocOut)
