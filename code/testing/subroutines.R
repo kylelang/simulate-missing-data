@@ -1,7 +1,7 @@
 ### Title:    Subroutines for Simulation to Evaluate Missingness Generation
 ### Author:   Kyle M. Lang
 ### Created:  2021-03-04
-### Modified: 2021-03-05
+### Modified: 2021-03-08
 
 simData <- function(n, p, dist)
 {
@@ -96,7 +96,36 @@ runCell2 <- function(parms, data, ...)
 
 ###--------------------------------------------------------------------------###
 
-doRep <- function(rp, conds, fixedSlopes, ...)
+## Run experiment within one design cell with optimized noise:
+runCell3 <- function(parms, data, ...)
+{
+    ## Generate some regression weights:
+    beta <- runif(parms$p, -1, 1)
+
+    ## Simulate the missingness:
+    tmp <- try(
+        with(parms,
+             simMissingness(pm       = pm,
+                            auc      = auc,
+                            data     = data,
+                            type     = type,
+                            beta     = beta,
+                            optimize = "noise",
+                            ...)
+             ),
+        silent = TRUE
+    )
+    
+    ## Return key summaries:
+    if(class(tmp) != "try-error")
+        list(pm = mean(tmp$r), auc = tmp$auc, e = NA)
+    else
+        list(pm = NA, auc = NA, e = tmp)
+}
+
+###--------------------------------------------------------------------------###
+
+doRep <- function(rp, conds, expNum, ...)
 {
     newData <- TRUE
     out <- err <- list()
@@ -114,7 +143,7 @@ doRep <- function(rp, conds, fixedSlopes, ...)
         dat1 <- dat0[1 : n, 1 : p]
 
         ## Choose the appropriate computational kernel:
-        runCell <- ifelse(fixedSlopes, runCell2, runCell1)
+        runCell <- switch(expNum, runCell2, runCell1, runCell3)
         
         ## Generate the appropriate missingness: 
         tmp      <- runCell(as.list(conds[i, ]), data = dat1, ...)

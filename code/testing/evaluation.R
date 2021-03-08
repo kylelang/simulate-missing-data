@@ -1,7 +1,7 @@
 ### Title:    Simulation to Evaluate Missingness Generation
 ### Author:   Kyle M. Lang
 ### Created:  2021-03-04
-### Modified: 2021-03-04
+### Modified: 2021-03-08
 
 rm(list = ls(all = TRUE))
 
@@ -12,9 +12,15 @@ library(parallel)
 source("../simMissingness.R")
 source("subroutines.R")
 
-outDir <- "../../output/noSmooth/"
+outDir <- "../../output/noise/"
 
 set.seed(235711)
+
+## expNum:
+## 1 = Optimized slopes
+## 2 = Fixed slopes
+## 3 = Optimized noise
+expNum <- 3
 
 nReps <- 250
 
@@ -47,7 +53,7 @@ saveRDS(out, paste0(outDir, "evaluation_output.rds"))
 
 ## Time one full replication:
 t1 <- system.time(
-    out <- doRep(1, conds, fixedSlopes = FALSE, smooth = TRUE)
+    out <- doRep(1, conds, expNum = expNum)
 )
 
-62 * t1 / 60^2
+125 * t1 / 60^2
