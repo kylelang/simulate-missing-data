@@ -8,7 +8,7 @@ rm(list = ls(all = TRUE))
 library(mvtnorm)
 library(pROC)
 
-source("simMissingness.R")
+source("../code/simMissingness.R")
 
 n    <- 10000
 p    <- 5
