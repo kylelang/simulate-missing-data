@@ -1,7 +1,9 @@
 ### Title:    Simulate MAR Missingness via Logistic Regression
 ### Author:   Kyle M. Lang
 ### Created:  2019-11-06
-### Modified: 2021-03-09
+### Modified: 2021-03-10
+
+library(pROC)
 
 ###--------------------------------------------------------------------------###
 
@@ -191,23 +193,12 @@
 
 ###--------------------------------------------------------------------------###
 
-#n    <- 1000
-#p    <- 5
-#pm   <- 0.25
-#auc  <- 0.75
-#beta <- rep(10, p)
-#type <- "high"
-#data <- as.data.frame(rmvnorm(n, rep(0, p), diag(p)))
-
-#stdData <- FALSE
-#stdEta  <- TRUE
-
 ## Simulate a nonresponse vector via logistic regression:
 simLogisticMissingness <- function(pm,
                                    data,
                                    auc       = NULL,
                                    snr       = NULL,
-                                   optimize  = "noise",
+                                   optimize  = "slopes",
                                    preds     = colnames(data),
                                    type      = "high",
                                    beta      = rep(1.0, length(preds)),
@@ -264,7 +255,6 @@ simLogisticMissingness <- function(pm,
     intercept <- b0Fit$minimum
                                            
     ## Compute the probabilities of nonresponse:
-                                        #if(logistic) {
     probs <- plogis(
         switch(type,
                high   = intercept + eta,
@@ -274,13 +264,6 @@ simLogisticMissingness <- function(pm,
                )
     )
     
-    r <- as.logical(rbinom(n = length(eta), size = 1, prob = probs))
-                                        #}
-                                        #else {
-                                        #    r <- .linProbMissingness(eta = eta, pm = pm, type = type)
-                                        #    probs <- b0 <- b1 <- NA
-                                        #}
-    
     if(is.null(snr))
         fit <- ifelse(optimize == "noise",
                       sqrt(noiseFit$objective) + auc,
@@ -288,7 +271,7 @@ simLogisticMissingness <- function(pm,
     else
         fit <- sqrt(v0) / sqrt(var(eta) - v0)
     
-    list(r   = r,
+    list(r   = as.logical(rbinom(n = length(eta), size = 1, prob = probs)),
          p   = probs,
          eta = eta,
          b0  = intercept,
@@ -299,36 +282,29 @@ simLogisticMissingness <- function(pm,
 
 ###--------------------------------------------------------------------------###
 
-#n        <- 1000
-#p        <- 5
-#pm       <- 0.25
-#auc      <- 0.75
-#beta     <- rep(1, p)
-#type     <- "high"
-#data     <- rmvnorm(n, rep(0, p), diag(p))
-#optimize <- FALSE
-
 ## Simulate a nonresponse vector via a linear probability model:
 simLinearMissingness <- function(pm,
                                  data,
-                                 auc       = NULL,
-                                 snr       = NULL,
-                                 optimize  = TRUE,
-                                 preds     = colnames(data),
-                                 type      = "high",
-                                 beta      = rep(1.0, length(preds)),
-                                 stdData   = TRUE,
+                                 auc      = NULL,
+                                 snr      = NULL,
+                                 optimize = TRUE,
+                                 preds    = colnames(data),
+                                 type     = "high",
+                                 beta     = rep(1.0, length(preds)),
+                                 stdData  = TRUE,
                                  ...)
 {
     if(is.null(snr) & is.null(auc))
         stop("You must define a value of either 'snr' or 'auc'")
+
+    if(optimize & !type %in% c("high", "low"))
+        stop("'type' must be either 'high' or 'low'")
     
     ## Standardize the missing data predictors:
     if(stdData) data <- scale(data)
     
     ## Define the (centered) linear predictor:
     eta <- as.numeric(as.matrix(data) %*% matrix(beta))
-                                        #if(optimize) eta <- as.numeric(scale(eta))
     
     ## Find the optimal proportion of noise:
     if(optimize) {
@@ -342,17 +318,22 @@ simLinearMissingness <- function(pm,
                               ...)
         
         ## Add noise to the linear predictor:
-        eta2 <- eta + noiseFit$minimum * noise
+        eta2 <- eta + (noiseFit$minimum * noise)
     }
     else
         ## Define the noisy linear predictor in terms of the specified SNR:
         eta2 <- eta + (1 / snr) * rnorm(length(eta), 0, sd(eta))
     
     r <- .linProbMissingness(eta = eta2, pm = pm, type = type)
-        
+
+    ## Compute the achieved AUC:
+    auc <- ifelse(type %in% c("high", "low"),
+                  as.numeric(auc(roc(r, eta, quiet = TRUE, ...))),
+                  NA)
+    
     list(r   = r,
          eta = eta2,
-         auc = as.numeric(auc(roc(r, eta, quiet = TRUE, ...))),
+         auc = auc,
          snr = sd(eta) / sqrt(var(eta2) - var(eta))
          )
 }

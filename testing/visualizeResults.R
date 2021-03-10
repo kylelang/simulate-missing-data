@@ -22,13 +22,29 @@ p <- ggplot(data = dat,
     geom_jitter()
 p + facet_grid(rows = vars(type), cols = vars(auc))
 
+dat <- error[error$n == 500, ]
+
+p <- ggplot(data = dat,
+            mapping = aes(y = count, x = pm, color = dist, shape = p)
+            ) +
+    geom_jitter()
+p + facet_grid(rows = vars(type), cols = vars(auc))
+
 head(prb)
 prb[1 : 6] <- lapply(prb[1 : 6], as.factor)
 
-dat <- prb[prb$dist == "gamma", ]
+dat <- prb[prb$dist == "norm" & prb$n == 500, ]
 
 p <- ggplot(data = dat,
-            mapping = aes(y = prbPM, x = pm, color = n, shape = p)
+            mapping = aes(y = prbAUC, x = pm, color = n, shape = p)
+            ) +
+    geom_jitter()
+p + facet_grid(rows = vars(type), cols = vars(auc))
+
+dat <- prb[prb$n == 500, ]
+
+p <- ggplot(data = dat,
+            mapping = aes(y = prbAUC, x = pm, color = dist, shape = p)
             ) +
     geom_jitter()
 p + facet_grid(rows = vars(type), cols = vars(auc))
@@ -53,3 +69,17 @@ p <- ggplot(data = auc,
     geom_jitter()
 p + facet_grid(rows = vars(type), cols = vars(dist))
 
+###--Fixed SNR---------------------------------------------------------------###
+
+sum(error$count)
+
+head(prb)
+prb[1 : 6] <- lapply(prb[1 : 6], as.factor)
+
+dat <- prb[prb$dist == "norm", ]
+
+p <- ggplot(data = dat,
+            mapping = aes(y = prbSNR, x = pm, color = n, shape = p)
+            ) +
+    geom_jitter()
+p + facet_grid(rows = vars(type), cols = vars(snr))

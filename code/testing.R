@@ -14,24 +14,24 @@ n    <- 10000
 p    <- 5
 pm   <- 0.25
 auc  <- 0.75
-snr  <- 1
+snr  <- NULL
 beta <- runif(p, -1, 1)
 type <- "low"
-opt  <- TRUE #"noise"
+opt  <- "slopes"
 std  <- TRUE
 
 X <- rmvnorm(n, rep(10, p), diag(p))
                                         #X <- as.data.frame(matrix(runif(n * p), ncol = p))
 
-                                        #tmp <- simMissingness(pm       = pm,
-                                        #                      auc      = auc,
-                                        #                      snr      = snr,
-                                        #                      data     = X,
-                                        #                      type     = type,
-                                        #                      beta     = beta,
-                                        #                      stdEta   = TRUE,
-                                        #                      optimize = opt,
-                                        #                      smooth   = FALSE)
+tmp <- simLogisticMissingness(pm       = pm,
+                              auc      = auc,
+                              snr      = snr,
+                              data     = X,
+                              type     = type,
+                              beta     = beta,
+                              stdData  = TRUE,
+                              optimize = opt,
+                              smooth   = FALSE)
 
 tmp <- simLinearMissingness(pm       = pm,
                             auc      = auc,
@@ -50,7 +50,6 @@ mean(r)
 
 tmp$auc
 tmp$snr
-
 tmp$fit
 
 plot(x = abs(tmp$eta), y = tmp$p)

@@ -43,3 +43,6 @@ vignettes/*.pdf
 
 # Output directory
 output/
+
+# RDS data files:
+*.rds
