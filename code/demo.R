@@ -21,7 +21,7 @@ y <- rnorm(n)
 
 ## Simulate missingness via logistic regression
 ## - Proportion missing = pm
-## - AUC for predicting the missingess = auc
+## - AUC for predicting the missingness = auc
 ## - Missing values in the positive tail of the linear predictor
 ## - AUC achieved via optimizing the slope values
 out <- simLogisticMissingness(pm       = pm,
@@ -49,15 +49,15 @@ mean(is.na(y2))
 
 ## Simulate missingness via a linear probability model
 ## - Proportion missing = pm
-## - AUC for predicting the missingess = auc
+## - AUC for predicting the missingness = auc
 ## - Missing values in the negative tail of the linear predictor
 ## - AUC achieved via optimizing the SNR
 out <- simLinearMissingness(pm       = pm,
                             auc      = auc,
                             data     = X,
+                            preds    = paste0("V", 1 : 3),
                             type     = "low",
                             optimize = TRUE)
-
 
 ## Print the achieved AUC:
 out$auc
@@ -89,9 +89,35 @@ out <- simLinearMissingness(pm       = pm,
                             type     = "tails",
                             optimize = FALSE)
 
-
 ## AUC is not calculated when simulating symmetric missingness via the linear
 ## probability model:
+out$auc
+
+## Print the achieved SNR:
+out$snr
+
+## Impose missing data on y:
+y2        <- y
+y2[out$r] <- NA
+
+## Compute proportion missing:
+mean(is.na(y2))
+
+###--------------------------------------------------------------------------###
+
+## Simulate missingness via a linear probability model with fixed SNR
+## - Proportion missing = pm
+## - SNR for the linear probability model = snr
+## - Missing values in the upper tail of the linear predictor
+## - Only one MAR predictor
+out <- simLinearMissingness(pm       = pm,
+                            snr      = snr,
+                            data     = X,
+                            preds    = "V2",
+                            type     = "high",
+                            optimize = FALSE)
+
+## Print the achieved AUC:
 out$auc
 
 ## Print the achieved SNR:

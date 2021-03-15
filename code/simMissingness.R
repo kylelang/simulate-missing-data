@@ -208,6 +208,12 @@ simLogisticMissingness <- function(pm,
 {
     if(is.null(snr) & is.null(auc))
         stop("You must define a value of either 'snr' or 'auc'")
+
+    if(!is.data.frame(data))
+        stop("'data' must be a data.frame")
+    
+    ## Extract the MAR predictors:
+    data <- data[preds]
     
     ## Standardize the missing data predictors:
     if(stdData & optimize != "noise") data <- scale(data)
@@ -299,6 +305,12 @@ simLinearMissingness <- function(pm,
 
     if(optimize & !type %in% c("high", "low"))
         stop("'type' must be either 'high' or 'low'")
+    
+    if(!is.data.frame(data))
+        stop("'data' must be a data.frame")
+    
+    ## Extract the MAR predictors:
+    data <- data[preds]
     
     ## Standardize the missing data predictors:
     if(stdData) data <- scale(data)
