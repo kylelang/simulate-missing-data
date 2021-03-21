@@ -1,11 +1,15 @@
-### Title:    Demonstrate the Missingness Simulation Routines
+### Title:    Demonstrate the Simulation Routines
 ### Author:   Kyle M. Lang
 ### Created:  2021-03-01
-### Modified: 2021-03-10
+### Modified: 2021-03-21
 
 rm(list = ls(all = TRUE))
 
 source("simMissingness.R")
+source("simData.R")
+
+library(mvtnorm) # Need this to simluate data via hardEtAl2012DataSim()
+library(pROC)    # Need this to calculate AUC in missingness simulations
 
 n   <- 1000
 p   <- 5
@@ -132,3 +136,16 @@ mean(is.na(y2))
 
 ###--------------------------------------------------------------------------###
 
+## Simulate data that matches Hardt et al (2012)
+## - Sample size = n
+## - Correlations involving auxiliary variables = rZ
+## - Number of auxiliary variables = pZ
+
+dat1 <- hardtEtAl2012DataSim(n = 10000, rZ = 0.5, pZ = 5)
+
+## Check the results:
+head(dat1)
+
+summary(lm(y ~ x1 + x2, data = dat1))
+
+cor(dat1)

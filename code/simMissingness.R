@@ -1,9 +1,7 @@
 ### Title:    Simulate MAR Missingness via Logistic Regression
 ### Author:   Kyle M. Lang
 ### Created:  2019-11-06
-### Modified: 2021-03-10
-
-library(pROC)
+### Modified: 2021-03-21
 
 ###--------------------------------------------------------------------------###
 
