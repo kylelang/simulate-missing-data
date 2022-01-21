@@ -370,3 +370,33 @@ simLinearMissingness <- function(pm,
          snr = sd(eta) / sqrt(var(eta2) - var(eta))
          )
 }
+
+###--------------------------------------------------------------------------###
+
+## Generate deterministic missingness based on quantiles of the  MAR predictor
+simSimpleMar <- function(data,
+                         pm,
+                         preds,
+                         type,
+                         beta    = rep(1, length(preds)),
+                         stdData = FALSE)
+{
+    
+    ## Extract the MAR predictors:
+    data <- data[preds]
+    
+    ## Standardize the missing data predictors:
+    if(stdData) data <- scale(data)
+    
+    ## Define the (centered) linear predictor:
+    eta <- as.numeric(as.matrix(data) %*% matrix(beta))
+    
+    switch(type,
+           high   = eta > quantile(eta, 1 - pm),
+           low    = eta < quantile(eta, pm),
+           center = eta > quantile(eta, 0.5 - pm / 2) &
+               eta < quantile(eta, 0.5 + pm / 2),
+           tails  = eta < quantile(eta, pm / 2) &
+               eta > quantile(eta, 1 - pm / 2)
+           )
+}
