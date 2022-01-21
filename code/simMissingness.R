@@ -1,7 +1,7 @@
 ### Title:    Simulate MAR Missingness via Logistic Regression
 ### Author:   Kyle M. Lang
 ### Created:  2019-11-06
-### Modified: 2021-03-21
+### Modified: 2022-01-21
 
 ###--------------------------------------------------------------------------###
 
@@ -196,7 +196,7 @@ simLogisticMissingness <- function(pm,
                                    data,
                                    auc       = NULL,
                                    snr       = NULL,
-                                   optimize  = "slopes",
+                                   optimize  = "intercept",
                                    preds     = colnames(data),
                                    type      = "high",
                                    beta      = rep(1.0, length(preds)),
@@ -204,8 +204,8 @@ simLogisticMissingness <- function(pm,
                                    stdData   = !stdEta,
                                    ...)
 {
-    if(is.null(snr) & is.null(auc))
-        stop("You must define a value of either 'snr' or 'auc'")
+                                        #if(is.null(snr) & is.null(auc))
+                                        #    stop("You must define a value of either 'snr' or 'auc'")
 
     if(!is.data.frame(data))
         stop("'data' must be a data.frame")
@@ -267,15 +267,18 @@ simLogisticMissingness <- function(pm,
                tails  = abs(eta) - intercept
                )
     )
+
+    r <- as.logical(rbinom(n = length(eta), size = 1, prob = probs))    
     
     if(is.null(snr))
-        fit <- ifelse(optimize == "noise",
-                      sqrt(noiseFit$objective) + auc,
-                      sqrt(b1Fit$objective) + auc)
+        fit <- auc(roc(r, probs, smooth = TRUE))
+                                        #    fit <- ifelse(optimize == "noise",
+                                        #                  sqrt(noiseFit$objective) + auc,
+                                        #                  sqrt(b1Fit$objective) + auc)
     else
         fit <- sqrt(v0) / sqrt(var(eta) - v0)
     
-    list(r   = as.logical(rbinom(n = length(eta), size = 1, prob = probs)),
+    list(r   = r,
          p   = probs,
          eta = eta,
          b0  = intercept,
@@ -284,6 +287,26 @@ simLogisticMissingness <- function(pm,
          )
 }
 
+###--------------------------------------------------------------------------###
+
+## Simulate a nonresponse vector via logistic regression without controlling the
+## strength of the MAR assocation:
+simLogisticMissingness0 <- function(pm,
+                                    data,
+                                    preds   = colnames(data),
+                                    type    = "high",
+                                    beta    = rep(1.0, length(preds)),
+                                    stdData = FALSE,
+                                    ...)
+    simLogisticMissingness(pm      = pm,
+                           data    = data,
+                           preds   = preds,
+                           type    = type,
+                           beta    = beta,
+                           stdData = stdData,
+                           stdEta  = FALSE,
+                           ...)
+                           
 ###--------------------------------------------------------------------------###
 
 ## Simulate a nonresponse vector via a linear probability model:

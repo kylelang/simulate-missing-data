@@ -38,11 +38,13 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-# Emacs autosave files
-*~
-
 # Output directory
 output/
 
 # RDS data files:
 *.rds
+
+# Auto-save stuff
+*~
+*.R#
+.#*
