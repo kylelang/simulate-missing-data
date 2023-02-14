@@ -6,7 +6,7 @@
 ###--------------------------------------------------------------------------###
 
 ## Define the missingess vector for the linear probability model:
-.linProbMissingness <- function(eta, pm, type) 
+.linProbMissingness <- function(eta, pm, type)
     switch(type,
            high   = eta > quantile(eta, 1 - pm),
            low    = eta < quantile(eta, pm),
@@ -18,10 +18,19 @@
 
 ###--------------------------------------------------------------------------###
 
+model <- "logistic"
+eta <- rnorm(100)
+pm <- 0.2
+type <- "center"
+intercept <- 0
 ## Objective function for the intercept:
-.fIntercept <- function(intercept, eta, pm, type)
-{
-    p <- plogis(
+.fIntercept <- function(intercept, eta, pm, type) {
+    f <- switch(model,
+                logistic = plogis,
+                probit   = pnorm,
+                stop("I can only optimize the intercept for logistic or probit models. I don't know what to do with a '", model, "' model.")
+    )
+    p <- f(
         switch(type,
                center = intercept - abs(eta),
                tails  = abs(eta) - intercept,
@@ -34,30 +43,32 @@
 ###--------------------------------------------------------------------------###
 
 ## Objective function for the slopes:
-.fSlopes <- function(slope, target, weights, data, type, ...)
-{
+.fSlopes <- function(slope, target, weights, data, type, ...) {
     eta <- as.numeric(as.matrix(data) %*% matrix(slope * weights))
 
     if(type %in% c("center", "tails")) eta <- abs(eta)
-    
+
     p <- plogis(eta)
     r <- rbinom(length(p), 1, p)
-    
+
     (auc(roc(r, p, quiet = TRUE, ...)) - target)^2
 }
 
 ###--------------------------------------------------------------------------###
 
 ## Objective function for the proportion of noise:
-.fNoise <- function(weight, target, eta, noise, pm, type, logistic, ...)
-{
-    if(logistic & type %in% c("center", "tails")) eta <- abs(eta)
+.fNoise <- function(weight, target, eta, noise, pm, type, model, ...) {
+    check <- model %in% c("logistic", "probit") & type %in% c("center", "tails")
+    if(check) eta <- abs(eta)
 
     ## Add noise to the linear predictor:
     eta2 <- eta + weight * noise
-    
-    if(logistic) {
-        p   <- plogis(eta2)
+
+    if(model %in% c("logistic", "probit")) {
+        p   <- switch(model,
+                      logistic = plogis(eta2),
+                      probit   = pnorm(eta2)
+                      )
         r   <- rbinom(length(p), 1, p)
         roc <- roc(r, p, quiet = TRUE, ...)
     }
@@ -65,7 +76,7 @@
         r   <- .linProbMissingness(eta = eta2, pm = pm, type = type)
         roc <- roc(r, eta, quiet = TRUE, ...)
     }
-    
+
     (auc(roc) - target)^2
 }
 
@@ -76,33 +87,34 @@
 .optIntercept <- function(pm,
                           eta,
                           type,
+                          model,
                           tol     = c(0.1, 0.001),
                           maxIter = 10,
-                          ...)
-{
+                          ...) {
     for(k in 1 : maxIter) {
         ## Define the search range:
         int <- k * range(eta)
-        
+
         ## Optimize the objective over 'int':
         out <- optimize(f        = .fIntercept,
                         interval = int,
                         eta      = eta,
                         pm       = pm,
-                        type     = type)
-        
+                        type     = type,
+                        model    = model)
+
         ## Are we far enough from the boundary?
         dist   <- out$minimum - int
         check1 <- all(abs(dist) > tol[1] * diff(int))
-        
+
         ## Are we within tolerance?
         check2 <- out$objective < tol[2]
-        
+
         if(check1 & check2) break
     }
     ## Did we fail?
-    if(!check1 | ! check2) stop("I could not optimize the intercept.")
-    
+    if(!check1 | !check2) stop("I could not optimize the intercept.")
+
     out
 }
 
@@ -116,12 +128,11 @@
                        type,
                        tol     = c(0.1, 0.001),
                        maxIter = 10,
-                       ...)
-{
+                       ...) {
     for(k in 1 : maxIter) {
         ## Define the search range:
         int <- k * range(data)
-        
+
         ## Optimize the objective over 'int':
         out <- optimize(f        = .fSlopes,
                         interval = int,
@@ -130,19 +141,19 @@
                         data     = data,
                         type     = type,
                         ...)
-        
+
         ## Are we far enough from the boundary?
         dist   <- out$minimum - int
         check1 <- all(abs(dist) > tol[1] * diff(int))
-        
+
         ## Are we within tolerance?
         check2 <- out$objective < tol[2]
-        
+
         if(check1 & check2) break
     }
     ## Did we fail?
     if(!check1 | ! check2) stop("I could not optimize the slopes.")
-    
+
     out
 }
 
@@ -154,15 +165,14 @@
                       noise,
                       pm,
                       type,
-                      logistic,
+                      model,
                       tol     = c(0.1, 0.001),
                       maxIter = 10,
-                      ...)
-{
+                      ...) {
     for(k in 1 : maxIter) {
         ## Define the search range:
         int <- c(0, k * 2)
-        
+
         ## Optimize the objective over 'int':
         out <- optimize(f        = .fNoise,
                         interval = int,
@@ -171,21 +181,21 @@
                         noise    = noise,
                         pm       = pm,
                         type     = type,
-                        logistic = logistic,
+                        model    = model,
                         ...)
-        
+
         ## Are we far enough from the boundary?
         dist   <- out$minimum - int
         check1 <- all(abs(dist) > tol[1] * diff(int))
-        
+
         ## Are we within tolerance?
         check2 <- out$objective < tol[2]
-        
+
         if(check1 & check2) break
     }
     ## Did we fail?
-    if(!check1 | ! check2) stop("I could not optimize the noise.")
-    
+    if(!check1 | !check2) stop("I could not optimize the noise.")
+
     out
 }
 
@@ -202,27 +212,26 @@ simLogisticMissingness <- function(pm,
                                    beta      = rep(1.0, length(preds)),
                                    stdEta    = FALSE,
                                    stdData   = !stdEta,
-                                   ...)
-{
+                                   ...) {
                                         #if(is.null(snr) & is.null(auc))
                                         #    stop("You must define a value of either 'snr' or 'auc'")
 
     if(!is.data.frame(data))
         stop("'data' must be a data.frame")
-    
+
     ## Extract the MAR predictors:
     data <- data[preds]
-    
+
     ## Standardize the missing data predictors:
     if(stdData & optimize != "noise") data <- scale(data)
-    
+
     ## Find optimal slope values:
     if(is.null(snr) & optimize == "slopes") {
         b1Fit <-
             .optSlopes(auc = auc, weights = beta, data = data, type = type, ...)
         beta    <- b1Fit$minimum * beta
     }
-    
+
     ## Define the (centered) linear predictor:
     eta <- as.numeric(as.matrix(data) %*% matrix(beta))
     if(stdEta | optimize == "noise")
@@ -231,12 +240,12 @@ simLogisticMissingness <- function(pm,
     ## Find the optimal proportion of noise:
     if(is.null(snr) & optimize == "noise") {
         noise    <- rnorm(length(eta), 0, sd(eta))
-        noiseFit <- .optNoise(auc      = auc,
-                              eta      = eta,
-                              noise    = noise,
-                              type     = type,
-                              pm       = pm,
-                              logistic = TRUE,
+        noiseFit <- .optNoise(auc   = auc,
+                              eta   = eta,
+                              noise = noise,
+                              type  = type,
+                              pm    = pm,
+                              model = "logistic",
                               ...)
 
         ## Save the variance of the raw linear predictor:
@@ -245,19 +254,23 @@ simLogisticMissingness <- function(pm,
         ## Add noise to the linear predictor:
         eta <- eta + noiseFit$minimum * noise
     }
-    
+
     ## Define the noisy linear predictor in terms of the specified SNR:
     if(!is.null(snr)) {
         v0  <- var(eta)
         eta <- eta + (1 / snr) * rnorm(length(eta), 0, sd(eta))
     }
-    
+
     ## Find an optimal intercept value:
-    b0Fit <- .optIntercept(pm = pm, eta = eta, type = type, ...)
-    
+    b0Fit <- .optIntercept(pm    = pm,
+                           eta   = eta,
+                           type  = type,
+                           model = "logistic",
+                           ...)
+
     ## Define the optimized intercept:
     intercept <- b0Fit$minimum
-                                           
+
     ## Compute the probabilities of nonresponse:
     probs <- plogis(
         switch(type,
@@ -268,8 +281,8 @@ simLogisticMissingness <- function(pm,
                )
     )
 
-    r <- as.logical(rbinom(n = length(eta), size = 1, prob = probs))    
-    
+    r <- as.logical(rbinom(n = length(eta), size = 1, prob = probs))
+
     if(is.null(snr))
         fit <- auc(roc(r, probs, smooth = TRUE))
                                         #    fit <- ifelse(optimize == "noise",
@@ -277,13 +290,13 @@ simLogisticMissingness <- function(pm,
                                         #                  sqrt(b1Fit$objective) + auc)
     else
         fit <- sqrt(v0) / sqrt(var(eta) - v0)
-    
+
     list(r   = r,
          p   = probs,
          eta = eta,
          b0  = intercept,
          b1  = beta,
-         fit = fit 
+         fit = fit
          )
 }
 
@@ -306,7 +319,104 @@ simLogisticMissingness0 <- function(pm,
                            stdData = stdData,
                            stdEta  = FALSE,
                            ...)
-                           
+
+###--------------------------------------------------------------------------###
+
+## Simulate a nonresponse vector via probit regression:
+simProbitMissingness <- function(pm,
+                                 data,
+                                 auc       = NULL,
+                                 snr       = NULL,
+                                 optimize  = "intercept",
+                                 preds     = colnames(data),
+                                 type      = "high",
+                                 beta      = rep(1.0, length(preds)),
+                                 stdEta    = FALSE,
+                                 stdData   = !stdEta,
+                                 ...) {
+                                        #if(is.null(snr) & is.null(auc))
+                                        #    stop("You must define a value of either 'snr' or 'auc'")
+
+    if(!is.data.frame(data))
+        stop("'data' must be a data.frame")
+
+    ## Extract the MAR predictors:
+    data <- data[preds]
+
+    ## Standardize the missing data predictors:
+    if(stdData) data <- scale(data)
+
+    ## Find optimal slope values:
+                                        #if(is.null(snr) & optimize == "slopes") {
+                                        #    b1Fit <-
+                                        #        .optSlopes(auc = auc, weights = beta, data = data, type = type, ...)
+                                        #    beta    <- b1Fit$minimum * beta
+                                        #}
+
+    ## Define the (centered) linear predictor:
+    eta <- as.numeric(as.matrix(data) %*% matrix(beta))
+    if(stdEta | optimize == "noise")
+        eta <- as.numeric(scale(eta))
+
+    ## Find the optimal proportion of noise:
+    if(is.null(snr) & optimize == "noise") {
+        noise    <- rnorm(length(eta), 0, sd(eta))
+        noiseFit <- .optNoise(auc   = auc,
+                              eta   = eta,
+                              noise = noise,
+                              type  = type,
+                              pm    = pm,
+                              model = "probit",
+                              ...)
+
+        ## Save the variance of the raw linear predictor:
+        v0 <- var(eta)
+
+        ## Add noise to the linear predictor:
+        eta <- eta + noiseFit$minimum * noise
+    }
+
+    ## Define the noisy linear predictor in terms of the specified SNR:
+    if(!is.null(snr)) {
+        v0  <- var(eta)
+        eta <- eta + (1 / snr) * rnorm(length(eta), 0, sd(eta))
+    }
+
+    ## Find an optimal intercept value:
+    b0Fit <- .optIntercept(pm = pm, eta = eta, type = type, ...)
+
+    ## Define the optimized intercept:
+    intercept <- b0Fit$minimum
+
+    ## Compute the probabilities of nonresponse:
+    probs <- plogis(
+        switch(type,
+               high   = intercept + eta,
+               low    = intercept - eta,
+               center = intercept - abs(eta),
+               tails  = abs(eta) - intercept
+               )
+    )
+
+    r <- as.logical(rbinom(n = length(eta), size = 1, prob = probs))
+
+    if(is.null(snr))
+        fit <- auc(roc(r, probs, smooth = TRUE))
+                                        #    fit <- ifelse(optimize == "noise",
+                                        #                  sqrt(noiseFit$objective) + auc,
+                                        #                  sqrt(b1Fit$objective) + auc)
+    else
+        fit <- sqrt(v0) / sqrt(var(eta) - v0)
+
+    list(r   = r,
+         p   = probs,
+         eta = eta,
+         b0  = intercept,
+         b1  = beta,
+         fit = fit
+         )
+}
+
 ###--------------------------------------------------------------------------###
 
 ## Simulate a nonresponse vector via a linear probability model:
@@ -319,26 +429,25 @@ simLinearMissingness <- function(pm,
                                  type     = "high",
                                  beta     = rep(1.0, length(preds)),
                                  stdData  = TRUE,
-                                 ...)
-{
+                                 ...) {
     if(is.null(snr) & is.null(auc))
         stop("You must define a value of either 'snr' or 'auc'")
 
     if(optimize & !type %in% c("high", "low"))
         stop("'type' must be either 'high' or 'low'")
-    
+
     if(!is.data.frame(data))
         stop("'data' must be a data.frame")
-    
+
     ## Extract the MAR predictors:
     data <- data[preds]
-    
+
     ## Standardize the missing data predictors:
     if(stdData) data <- scale(data)
-    
+
     ## Define the (centered) linear predictor:
     eta <- as.numeric(as.matrix(data) %*% matrix(beta))
-    
+
     ## Find the optimal proportion of noise:
     if(optimize) {
         noise    <- rnorm(length(eta), 0, sd(eta))
@@ -349,21 +458,21 @@ simLinearMissingness <- function(pm,
                               pm       = pm,
                               logistic = FALSE,
                               ...)
-        
+
         ## Add noise to the linear predictor:
         eta2 <- eta + (noiseFit$minimum * noise)
     }
     else
         ## Define the noisy linear predictor in terms of the specified SNR:
         eta2 <- eta + (1 / snr) * rnorm(length(eta), 0, sd(eta))
-    
+
     r <- .linProbMissingness(eta = eta2, pm = pm, type = type)
 
     ## Compute the achieved AUC:
     auc <- ifelse(type %in% c("high", "low"),
                   as.numeric(auc(roc(r, eta, quiet = TRUE, ...))),
                   NA)
-    
+
     list(r   = r,
          eta = eta2,
          auc = auc,
@@ -379,18 +488,17 @@ simSimpleMar <- function(data,
                          preds,
                          type,
                          beta    = rep(1, length(preds)),
-                         stdData = FALSE)
-{
-    
+                         stdData = FALSE) {
+
     ## Extract the MAR predictors:
     data <- data[preds]
-    
+
     ## Standardize the missing data predictors:
     if(stdData) data <- scale(data)
-    
+
     ## Define the (centered) linear predictor:
     eta <- as.numeric(as.matrix(data) %*% matrix(beta))
-    
+
     switch(type,
            high   = eta > quantile(eta, 1 - pm),
            low    = eta < quantile(eta, pm),
