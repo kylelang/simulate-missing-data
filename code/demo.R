@@ -5,7 +5,7 @@
 
 rm(list = ls(all = TRUE))
 
-source("simMissingness.R")
+source("code/simMissingness.R")
 source("simData.R")
 
 library(mvtnorm) # Need this to simluate data via hardEtAl2012DataSim()
@@ -58,23 +58,51 @@ mean(is.na(y2))
 ## - Missing values in the positive tail of the linear predictor
 ## - AUC achieved via optimizing the slope values
 out <- simLogisticMissingness(pm       = pm,
-                              auc      = auc,
+                              auc      = auc,-
                               data     = X,
                               type     = "high",
                               optimize = "slopes",
                               stdData  = TRUE,
-                              beta     = runif(5)
+                              beta     = runif(5),
+                              tol      = c(0.1, 0.0001)
                               )
 
 ## Print the achieved AUC:
 out$fit
 
-## Impose missing data on y:
-y2        <- y
-y2[out$r] <- NA
+## Compute proportion missing:
+mean(out$m)
+
+## WARNING:
+## This approach is highly unstable at small sample sizes (i.e., N << 1000).
+## In small samples, the optimization can fail or results (in terms of PM and
+## AUC) can be negatively biased.
+
+###--------------------------------------------------------------------------###
+
+## Simulate missingness via probit regression
+## - Proportion missing = pm
+## - AUC for predicting the missingness = auc
+## - Missing values in the positive tail of the linear predictor
+## - AUC achieved via optimizing the noise values
+out <- simProbitMissingness(pm       = pm,
+                            auc      = auc,
+                            data     = X,
+                            type     = "high",
+                            optimize = "noise",
+                            stdData  = TRUE,
+                            beta     = runif(5)
+                            )
+
+dim(X)
+
+undebug(simProbitMissingness)
+
+## Print the achieved AUC:
+out$fit
 
 ## Compute proportion missing:
-mean(is.na(y2))
+mean(out$m)
 
 ## WARNING:
 ## This approach is highly unstable at small sample sizes (i.e., N << 1000).

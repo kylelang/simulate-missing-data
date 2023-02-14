@@ -1,7 +1,7 @@
 ### Title:    Simulate MAR Missingness via Logistic Regression
 ### Author:   Kyle M. Lang
 ### Created:  2019-11-06
-### Modified: 2022-01-21
+### Modified: 2023-02-14
 
 ###--------------------------------------------------------------------------###
 
@@ -18,13 +18,13 @@
 
 ###--------------------------------------------------------------------------###
 
-model <- "logistic"
-eta <- rnorm(100)
-pm <- 0.2
-type <- "center"
-intercept <- 0
+                                        #model <- "logistic"
+                                        #eta <- rnorm(100)
+                                        #pm <- 0.2
+                                        #type <- "center"
+                                        #intercept <- 0
 ## Objective function for the intercept:
-.fIntercept <- function(intercept, eta, pm, type) {
+.fIntercept <- function(intercept, eta, pm, type, model) {
     f <- switch(model,
                 logistic = plogis,
                 probit   = pnorm,
@@ -118,6 +118,10 @@ intercept <- 0
     out
 }
 
+sqrt(0.0001)
+0.01^2 |> sqrt()
+
+0.005^2
 ###--------------------------------------------------------------------------###
 
 ## Optimize the logistic regression slopes for a given set of predictors to get
@@ -281,17 +285,17 @@ simLogisticMissingness <- function(pm,
                )
     )
 
-    r <- as.logical(rbinom(n = length(eta), size = 1, prob = probs))
+    m <- as.logical(rbinom(n = length(eta), size = 1, prob = probs))
 
     if(is.null(snr))
-        fit <- auc(roc(r, probs, smooth = TRUE))
+        fit <- auc(roc(m, probs, smooth = TRUE))
                                         #    fit <- ifelse(optimize == "noise",
                                         #                  sqrt(noiseFit$objective) + auc,
                                         #                  sqrt(b1Fit$objective) + auc)
     else
         fit <- sqrt(v0) / sqrt(var(eta) - v0)
 
-    list(r   = r,
+    list(m   = m,
          p   = probs,
          eta = eta,
          b0  = intercept,
@@ -360,7 +364,7 @@ simProbitMissingness <- function(pm,
 
     ## Find the optimal proportion of noise:
     if(is.null(snr) & optimize == "noise") {
-        noise    <- rnorm(length(eta), 0, sd(eta))
+        noise    <- rnorm(length(eta), 0, 1) #sd(eta))
         noiseFit <- .optNoise(auc   = auc,
                               eta   = eta,
                               noise = noise,
@@ -383,13 +387,17 @@ simProbitMissingness <- function(pm,
     }
 
     ## Find an optimal intercept value:
-    b0Fit <- .optIntercept(pm = pm, eta = eta, type = type, ...)
+    b0Fit <- .optIntercept(pm    = pm,
+                           eta   = eta,
+                           type  = type,
+                           model = "probit",
+                           ...)
 
     ## Define the optimized intercept:
     intercept <- b0Fit$minimum
 
     ## Compute the probabilities of nonresponse:
-    probs <- plogis(
+    probs <- pnorm(
         switch(type,
                high   = intercept + eta,
                low    = intercept - eta,
@@ -398,17 +406,17 @@ simProbitMissingness <- function(pm,
                )
     )
 
-    r <- as.logical(rbinom(n = length(eta), size = 1, prob = probs))
+    m <- as.logical(rbinom(n = length(eta), size = 1, prob = probs))
 
     if(is.null(snr))
-        fit <- auc(roc(r, probs, smooth = TRUE))
+        fit <- auc(roc(m, probs, smooth = TRUE))
                                         #    fit <- ifelse(optimize == "noise",
                                         #                  sqrt(noiseFit$objective) + auc,
                                         #                  sqrt(b1Fit$objective) + auc)
     else
         fit <- sqrt(v0) / sqrt(var(eta) - v0)
 
-    list(r   = r,
+    list(m   = m,
          p   = probs,
          eta = eta,
          b0  = intercept,
@@ -466,14 +474,14 @@ simLinearMissingness <- function(pm,
         ## Define the noisy linear predictor in terms of the specified SNR:
         eta2 <- eta + (1 / snr) * rnorm(length(eta), 0, sd(eta))
 
-    r <- .linProbMissingness(eta = eta2, pm = pm, type = type)
+    m <- .linProbMissingness(eta = eta2, pm = pm, type = type)
 
     ## Compute the achieved AUC:
     auc <- ifelse(type %in% c("high", "low"),
-                  as.numeric(auc(roc(r, eta, quiet = TRUE, ...))),
+                  as.numeric(auc(roc(m, eta, quiet = TRUE, ...))),
                   NA)
 
-    list(r   = r,
+    list(m   = m,
          eta = eta2,
          auc = auc,
          snr = sd(eta) / sqrt(var(eta2) - var(eta))
