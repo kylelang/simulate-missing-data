@@ -5,21 +5,21 @@
 
 rm(list = ls(all = TRUE))
 
-source("code/simMissingness.R")
+source("simMissingness.R")
 source("simData.R")
 
 library(mvtnorm) # Need this to simluate data via hardEtAl2012DataSim()
 library(pROC)    # Need this to calculate AUC in missingness simulations
 
-n   <- 100
+n   <- 5000
 p   <- 5
 pm  <- 0.25
 auc <- 0.8
 snr <- 0.5
+r2  <- 0.5
 
 ## Generate some synthetic data:
 X <- as.data.frame(matrix(rnorm(n * p), ncol = p))
-y <- rnorm(n)
 
 ###--------------------------------------------------------------------------###
 
@@ -52,20 +52,97 @@ mean(is.na(y2))
 
 ###--------------------------------------------------------------------------###
 
+undebug(simLogisticMissingness)
+
 ## Simulate missingness via logistic regression
 ## - Proportion missing = pm
 ## - AUC for predicting the missingness = auc
 ## - Missing values in the positive tail of the linear predictor
 ## - AUC achieved via optimizing the slope values
 out <- simLogisticMissingness(pm       = pm,
-                              auc      = auc,-
+                              auc      = auc,
                               data     = X,
                               type     = "high",
                               optimize = "slopes",
-                              stdData  = TRUE,
-                              beta     = runif(5),
-                              tol      = c(0.1, 0.0001)
+                              stdData  = TRUE
+                              #beta     = runif(5, 0.5, 2.0)
+                              #tol      = c(0.1, 0.0001)
                               )
+
+
+library(ggplot2)
+library(dplyr)
+
+beta <- rep(1, 5)
+type <- "high"
+model <- "logistic"
+
+y   <- seq(0, 1000, 0.01)
+tmp <- rep(NA, length(y))
+i <- 0
+for(x in y) {
+    i <- i + 1
+    tmp[i] <- .fSlopes(x,
+                       target = auc,
+                       weights = beta,
+                       data = X,
+                       type = type,
+                       model = model)
+}
+
+
+?missing
+
+s2 <- getSigma2(0.25, X, beta)
+eta <- as.matrix(X) %*% matrix(beta)
+
+c(0.1, 0.3, 0.5)^2
+
+mean(eta)
+
+y <- eta + rnorm(nrow(X), 0, sqrt(s2))
+p <- pnorm(y, mean = quantile(y, 0.25))
+
+m1 <- as.numeric(y < quantile(y, 0.5))
+m2 <- as.numeric(y < runif(length(y)))
+m3 <- rbinom(length(y), 1, p)
+
+mean(m1)
+mean(m2)
+mean(m3)
+
+auc(m1, as.numeric(eta))
+auc(m2, as.numeric(eta))
+auc(m3, as.numeric(eta))
+
+dat <- data.frame(weight = y, objective = tmp)
+
+mean(m)
+
+dat %>%
+    filter(weight < 1) %>%
+    ggplot(aes(weight, objective)) + geom_line()
+
+tmp <- fSlopes_dump
+
+roc1 <- with(tmp, roc(m, eta))
+with(tmp, auc(m, eta))
+
+ls(roc1)
+
+roc1$auc
+
+tmp
+
+dat <- with(tmp, data.frame(m = m, p = p, eta = eta))
+
+ggplot(dat, aes(eta, p, color = m)) + geom_point()
+
+?auc
+
+tmp$p
+tmp$m
+?roc
 
 ## Print the achieved AUC:
 out$fit
@@ -89,9 +166,10 @@ out <- simProbitMissingness(pm       = pm,
                             auc      = auc,
                             data     = X,
                             type     = "high",
-                            optimize = "noise",
+                            optimize = "slopes",
                             stdData  = TRUE,
-                            beta     = runif(5)
+                            beta     = runif(5),
+                            tol      = c(0.1, 0.0001)
                             )
 
 dim(X)
@@ -209,3 +287,42 @@ head(dat1)
 summary(lm(y ~ x1 + x2, data = dat1))
 
 cor(dat1)
+
+###--------------------------------------------------------------------------###
+
+## Simulate missingness via a thresholded latent variable
+## - Proportion missing = pm
+## - R^2 for the latent variable = r2
+## - Missing values in the upper tail of the latent variable
+
+debug(simLvtMissingness)
+
+out <- simLvtMissingness(pm     = 0.3,
+                         r2     = 0.5,
+                         data   = X,
+                         type   = "high",
+                         retAuc = TRUE)
+
+## Print the achieved AUC:
+out$auc
+
+## Compute proportion missing:
+mean(out$m)
+
+ls(out)
+
+with(out, cor(eta, eta + noise))^2
+
+dat <- data.frame(out$m, X)
+colnames(dat) <- c("m", paste0("x", 1:ncol(X)))
+
+fit <- glm(m ~ x1 + x2 + x3 + x4 + x5,
+                                        #I(x1^2) + I(x2^2) + I(x3^2) + I(x4^2) + I(x5^2),
+           data = dat,
+           family = "binomial")
+
+summary(fit)
+
+library(DescTools)
+
+PseudoR2(fit, "all")

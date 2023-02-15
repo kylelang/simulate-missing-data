@@ -1,28 +1,22 @@
 ### Title:    Simulate MAR Missingness via Logistic Regression
 ### Author:   Kyle M. Lang
 ### Created:  2019-11-06
-### Modified: 2023-02-14
+### Modified: 2023-02-15
 
 ###--------------------------------------------------------------------------###
 
-## Define the missingess vector for the linear probability model:
-.linProbMissingness <- function(eta, pm, type)
-    switch(type,
-           high   = eta > quantile(eta, 1 - pm),
-           low    = eta < quantile(eta, pm),
-           center = eta > quantile(eta, (1 - pm) / 2) &
-               eta < quantile(eta, pm + (1 - pm) / 2),
-           tails  = eta < quantile(eta, pm / 2) |
-               eta > quantile(eta, 1 - (pm / 2))
-           )
+## Define the missingess vector by thresholding a latent variable:
+.makeMissingness <- function(y, pm, type)
+    switch(
+        type,
+        high   = y > quantile(y, 1 - pm),
+        low    = y < quantile(y, pm),
+        center = y > quantile(y, (1 - pm) / 2) & y < quantile(y, pm + (1 - pm) / 2),
+        tails  = y < quantile(y, pm / 2) | y > quantile(y, 1 - (pm / 2))
+    )
 
 ###--------------------------------------------------------------------------###
 
-                                        #model <- "logistic"
-                                        #eta <- rnorm(100)
-                                        #pm <- 0.2
-                                        #type <- "center"
-                                        #intercept <- 0
 ## Objective function for the intercept:
 .fIntercept <- function(intercept, eta, pm, type, model) {
     f <- switch(model,
@@ -43,15 +37,19 @@
 ###--------------------------------------------------------------------------###
 
 ## Objective function for the slopes:
-.fSlopes <- function(slope, target, weights, data, type, ...) {
+.fSlopes <- function(slope, target, weights, data, type, model, ...) {
     eta <- as.numeric(as.matrix(data) %*% matrix(slope * weights))
 
     if(type %in% c("center", "tails")) eta <- abs(eta)
 
-    p <- plogis(eta)
-    r <- rbinom(length(p), 1, p)
+    p <- switch(model,
+                logistic = plogis(eta),
+                probit   = pnorm(eta),
+                stop("I can only optimize the slopes for logistic or probit models. I don't know what to do with a '", model, "' model.")
+                )
+    m <- rbinom(length(p), 1, p)
 
-    (auc(roc(r, p, quiet = TRUE, ...)) - target)^2
+    (auc(m, eta, quiet = TRUE, ...) - target)^2
 }
 
 ###--------------------------------------------------------------------------###
@@ -88,7 +86,7 @@
                           eta,
                           type,
                           model,
-                          tol     = c(0.1, 0.001),
+                          tol     = c(0.001, 0.0001),
                           maxIter = 10,
                           ...) {
     for(k in 1 : maxIter) {
@@ -105,7 +103,7 @@
 
         ## Are we far enough from the boundary?
         dist   <- out$minimum - int
-        check1 <- all(abs(dist) > tol[1] * diff(int))
+        check1 <- all(abs(dist) > tol[1])
 
         ## Are we within tolerance?
         check2 <- out$objective < tol[2]
@@ -118,10 +116,6 @@
     out
 }
 
-sqrt(0.0001)
-0.01^2 |> sqrt()
-
-0.005^2
 ###--------------------------------------------------------------------------###
 
 ## Optimize the logistic regression slopes for a given set of predictors to get
@@ -130,12 +124,13 @@ sqrt(0.0001)
                        weights,
                        data,
                        type,
-                       tol     = c(0.1, 0.001),
-                       maxIter = 10,
+                       model,
+                       tol     = c(0.001, 0.0001),
+                       maxIter = 100,
                        ...) {
-    for(k in 1 : maxIter) {
+    for(k in 1:maxIter) {
         ## Define the search range:
-        int <- k * range(data)
+        int <- c(0, max(data)) * k
 
         ## Optimize the objective over 'int':
         out <- optimize(f        = .fSlopes,
@@ -144,14 +139,24 @@ sqrt(0.0001)
                         weights  = weights,
                         data     = data,
                         type     = type,
+                        model    = model,
                         ...)
 
         ## Are we far enough from the boundary?
         dist   <- out$minimum - int
-        check1 <- all(abs(dist) > tol[1] * diff(int))
+        check1 <- all(abs(dist) > tol[1])
 
         ## Are we within tolerance?
         check2 <- out$objective < tol[2]
+
+        print(paste("k:", k))
+        print(paste("int:", paste(int, collapse = ":")))
+        print(paste("max(data):", max(data)))
+        print(paste("Objective:", out$objective))
+        print(paste("Slope:", out$minimum))
+        print(paste("check1:", check1))
+        print(paste("check2:", check2))
+        print("")
 
         if(check1 & check2) break
     }
@@ -231,9 +236,13 @@ simLogisticMissingness <- function(pm,
 
     ## Find optimal slope values:
     if(is.null(snr) & optimize == "slopes") {
-        b1Fit <-
-            .optSlopes(auc = auc, weights = beta, data = data, type = type, ...)
-        beta    <- b1Fit$minimum * beta
+        b1Fit <- .optSlopes(auc     = auc,
+                            weights = beta,
+                            data    = data,
+                            type    = type,
+                            model   = "logistic",
+                            ...)
+        beta <- b1Fit$minimum * beta
     }
 
     ## Define the (centered) linear predictor:
@@ -351,16 +360,20 @@ simProbitMissingness <- function(pm,
     if(stdData) data <- scale(data)
 
     ## Find optimal slope values:
-                                        #if(is.null(snr) & optimize == "slopes") {
-                                        #    b1Fit <-
-                                        #        .optSlopes(auc = auc, weights = beta, data = data, type = type, ...)
-                                        #    beta    <- b1Fit$minimum * beta
-                                        #}
+    if(is.null(snr) & optimize == "slopes") {
+        b1Fit <- .optSlopes(auc     = auc,
+                            weights = beta,
+                            data    = data,
+                            type    = type,
+                            model   = "probit",
+                            ...)
+        beta <- b1Fit$minimum * beta
+    }
 
     ## Define the (centered) linear predictor:
     eta <- as.numeric(as.matrix(data) %*% matrix(beta))
-    if(stdEta | optimize == "noise")
-        eta <- as.numeric(scale(eta))
+                                        #if(stdEta | optimize == "noise")
+                                        #    eta <- as.numeric(scale(eta))
 
     ## Find the optimal proportion of noise:
     if(is.null(snr) & optimize == "noise") {
@@ -474,7 +487,7 @@ simLinearMissingness <- function(pm,
         ## Define the noisy linear predictor in terms of the specified SNR:
         eta2 <- eta + (1 / snr) * rnorm(length(eta), 0, sd(eta))
 
-    m <- .linProbMissingness(eta = eta2, pm = pm, type = type)
+    m <- .makeMissingness(y = eta2, pm = pm, type = type)
 
     ## Compute the achieved AUC:
     auc <- ifelse(type %in% c("high", "low"),
@@ -490,13 +503,44 @@ simLinearMissingness <- function(pm,
 
 ###--------------------------------------------------------------------------###
 
-## Generate deterministic missingness based on quantiles of the  MAR predictor
-simSimpleMar <- function(data,
-                         pm,
-                         preds,
-                         type,
-                         beta    = rep(1, length(preds)),
-                         stdData = FALSE) {
+## Compute the residual variance necessary to produce a given R^2:
+.getSigma2 <- function(r2, eta, x, beta) {
+    if(missing(eta)) {
+        if(length(beta) > 1) {
+            beta <- matrix(beta)
+            vX <- t(beta) %*% cov(x) %*% beta
+        }
+        else
+            vX <- beta^2 * var(x)
+    }
+    else
+        vX <- var(eta)
+
+    (vX / r2) - vX
+}
+
+###--------------------------------------------------------------------------###
+
+## Simulate missingness based on a thresholded latent response variable:
+simLvtMissingness <- function(pm,
+                              data,
+                              r2      = 1.0,
+                              preds   = colnames(data),
+                              type    = "high",
+                              beta    = rep(1.0, length(preds)),
+                              stdData = FALSE,
+                              minimal = FALSE,
+                              retAuc  = !minimal,
+                              ...) {
+
+    if(r2 <= 0 | r2 > 1)
+        stop("'r2' must be in the interval (0, 1]")
+
+    if(r2 == 1.0)
+        message("You have set 'r2 = 1', so I will simulate a deterministic MAR relation.")
+
+    if(!is.data.frame(data))
+        stop("'data' must be a data.frame.")
 
     ## Extract the MAR predictors:
     data <- data[preds]
@@ -504,15 +548,46 @@ simSimpleMar <- function(data,
     ## Standardize the missing data predictors:
     if(stdData) data <- scale(data)
 
-    ## Define the (centered) linear predictor:
+    ## Define the (deterministic) linear predictor:
     eta <- as.numeric(as.matrix(data) %*% matrix(beta))
 
-    switch(type,
-           high   = eta > quantile(eta, 1 - pm),
-           low    = eta < quantile(eta, pm),
-           center = eta > quantile(eta, 0.5 - pm / 2) &
-               eta < quantile(eta, 0.5 + pm / 2),
-           tails  = eta < quantile(eta, pm / 2) &
-               eta > quantile(eta, 1 - pm / 2)
-           )
+    ## Add noise if r2 < 1.0:
+    if(r2 < 1.0) {
+        ## Define the latent residual variance:
+        s2 <- .getSigma2(r2 = r2, eta = eta)
+
+        ## Define the (stochastic) latent response vector:
+        noise <- rnorm(length(eta), 0, sqrt(s2))
+    }
+
+    ## Threshold y to produce the missingness vector:
+    m <- .makeMissingness(y = eta + noise, pm = pm, type = type)
+
+    if(minimal) return(m)
+
+    out <- list(m = m, eta = eta, s2 = s2, noise = noise)
+
+    if(retAuc)
+        out$auc <- pROC::auc(m, eta, quiet = TRUE, ...)
+
+    out
 }
+
+###--------------------------------------------------------------------------###
+
+## Generate deterministic missingness based on quantiles of the MAR predictor
+simSimpleMar <- function(data,
+                         pm,
+                         preds,
+                         type,
+                         beta    = rep(1, length(preds)),
+                         stdData = FALSE,
+                         ...)
+    simLvtMissingness(pm      = pm,
+                      data    = data,
+                      r2      = 1.0,
+                      preds   = preds,
+                      type    = type,
+                      beta    = beta,
+                      stdData = stdData,
+                              ...)
